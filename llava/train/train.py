@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 import json
 import logging
 import pathlib
-from typing import Dict, Optional, Sequence, List
+from typing import Dict, Optional, Sequence, List, Literal
 from PIL import Image, ImageFile
 from packaging import version
 import numpy as np
@@ -81,6 +81,16 @@ class ModelArguments:
     mm_use_im_patch_token: bool = field(default=True)
     mm_patch_merge_type: Optional[str] = field(default="flat")
     mm_vision_select_feature: Optional[str] = field(default="patch")
+
+    mm_vision_token_compression_type: Optional[str] = field(default=None)
+    mm_vision_token_compressor_placement: Optional[Literal["start", "end"]] = field(default=None)
+    mm_vision_output_token_count: Optional[int] = field(default=576)
+    mm_vision_output_combined_token_count: Optional[int] = field(default=None)
+    mm_vision_token_compression_kernel_size: Optional[int] = field(default=None)
+    mm_vision_token_compression_stride: Optional[int] = field(default=None)
+    token_packer_down_rate: Optional[int] = field(default=None)
+    mm_conv_token_reduction_intermediate_dim: Optional[int] = field(default=256)
+
     mm_resampler_type: Optional[str] = field(default=None)
     mm_mask_drop_mode: str = field(default="fixed")
     mm_mask_drop_skip_percentage: float = field(default=0.0)
@@ -1393,12 +1403,20 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
 
                 deepspeed.utils.set_z3_leaf_modules(model, [Qwen2MoeSparseMoeBlock])
             else:
+                tokenizer = transformers.AutoTokenizer.from_pretrained(
+                model_args.model_name_or_path,
+                cache_dir=training_args.cache_dir,
+                model_max_length=training_args.model_max_length,
+                padding_side="right",
+                use_fast=False,
+                )
                 model = LlavaQwenForCausalLM.from_pretrained(
                     model_args.model_name_or_path,
                     cache_dir=training_args.cache_dir,
                     attn_implementation=training_args.attn_implementation,
                     torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
                     low_cpu_mem_usage=False,
+                    tokenizer=tokenizer,
                     **customized_kwargs,
                 )
         elif "gemma" in model_args.model_name_or_path.lower():

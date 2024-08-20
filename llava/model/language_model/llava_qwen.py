@@ -57,6 +57,16 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         # Initialize weights and apply final processing
         self.post_init()
 
+    @classmethod
+    def from_pretrained(cls, *model_args, **kwargs):
+        tokenizer = kwargs.pop('tokenizer', None)
+        model = super(LlavaQwenForCausalLM, cls).from_pretrained(*model_args, **kwargs)
+        if tokenizer is not None:
+            model.tokenizer = tokenizer
+        if tokenizer is None:
+            raise NotImplementedError
+        return model
+    
     def get_model(self):
         return self.model
 

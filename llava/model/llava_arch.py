@@ -40,7 +40,7 @@ class LlavaMetaModel:
             delay_load = getattr(config, "delay_load", False)
             self.vision_tower = build_vision_tower(config, delay_load=delay_load)
             self.vision_resampler = build_vision_resampler(config, vision_tower=self.vision_tower)
-            self.mm_projector = build_vision_projector(config, vision_cfg=self.vision_tower.config)
+            self.mm_projector = build_vision_projector(config, self.vision_tower.config)
 
             if "unpad" in getattr(config, "mm_patch_merge_type", ""):
                 self.image_newline = nn.Parameter(torch.empty(config.hidden_size, dtype=self.dtype))
@@ -93,8 +93,16 @@ class LlavaMetaModel:
         self.config.mm_vision_select_feature = mm_vision_select_feature
         self.config.mm_patch_merge_type = mm_patch_merge_type
 
+        self.config.mm_vision_token_compression_type = model_args.mm_vision_token_compression_type
+        self.config.mm_vision_output_token_count = model_args.mm_vision_output_token_count
+        self.config.mm_vision_output_combined_token_count = model_args.mm_vision_output_combined_token_count
+        self.config.mm_vision_token_compression_kernel_size = model_args.mm_vision_token_compression_kernel_size
+        self.config.mm_vision_token_compression_stride = model_args.mm_vision_token_compression_stride
+        self.config.token_packer_down_rate = model_args.token_packer_down_rate
+        self.config.mm_conv_token_reduction_intermediate_dim = model_args.mm_conv_token_reduction_intermediate_dim
+
         if getattr(self, "mm_projector", None) is None:
-            self.mm_projector = build_vision_projector(self.config, vision_cfg=vision_tower.config)
+            self.mm_projector = build_vision_projector(self.config, vision_tower.config)
 
             if "unpad" in mm_patch_merge_type:
                 embed_std = 1 / torch.sqrt(torch.tensor(self.config.hidden_size, dtype=self.dtype))
@@ -181,10 +189,14 @@ class LlavaMetaForCausalLM(ABC):
         image_feature = image_feature.view(num_frames, -1, num_dim)
         return image_feature
 
-    def encode_images(self, images):
-        image_features = self.get_model().get_vision_tower()(images)
+    def encode_images(self, images, text=None):
+        # image_features = self.get_model().get_vision_tower()(images)
         # image_features = self.get_model().vision_resampler(image_features, images=images)
-        image_features = self.get_model().mm_projector(image_features)
+        # image_features = self.get_model().mm_projector(image_features)
+
+        features = self.get_model().get_vision_tower()(images, text)
+        image_features = self.get_model().mm_projector(features)
+
         return image_features
     
     def encode_multimodals(self, videos_or_images, video_idx_in_batch, split_sizes=None):
@@ -204,8 +216,9 @@ class LlavaMetaForCausalLM(ABC):
         # rank_print(modalities)
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
             return input_ids, position_ids, attention_mask, past_key_values, None, labels
-
         if type(images) is list or images.ndim == 5:
+            if 'query' in self.get_model().config.mm_vision_token_compression_type:
+                raise NotImplementedError("The 'query-attn' compression type is not supported.")
             if type(images) is list:
                 images = [x.unsqueeze(0) if x.ndim == 3 else x for x in images]
 
@@ -326,7 +339,30 @@ class LlavaMetaForCausalLM(ABC):
             else:
                 raise ValueError(f"Unexpected mm_patch_merge_type: {self.config.mm_patch_merge_type}")
         else:
-            image_features = self.encode_images(images)
+            # ['query-attn', 'query-attn-deep', 'query-attn-deep-lessparams', 'half-query-attn-deep', 'half-query-attn-deep-lessparams', 'entity-attn-deep']
+            if 'query' in getattr(self.get_model().config, 'mm_vision_token_compression_type', None):
+                # split_idx = (input_ids==-200).nonzero()[:,1]
+                #to handle some cases where there are multiple -200 in a row (we take the last one)
+                #this looks like a complex snippet of code but has been tested well 
+                split_idx = (input_ids == -200).nonzero(as_tuple=False) #returns batch_id, row_ids of -200, ex: [0:35, 1:35, 1:37, 2:35]
+                row_indices = split_idx[:, 0].tolist() #[0,1,1,2]
+                last_occurrence_indices = {row.item(): col.item() for row, col in split_idx} #{0:35,1:37, 2:35}
+                split_idx = [last_occurrence_indices[row.item()] for row, _ in split_idx] #[35,37,37,35]
+                
+                main_text_ids = []
+                for k,idx in zip(row_indices, split_idx):
+                    main_text_ids.append(input_ids[k][idx+1:])
+                    
+                main_text = self.tokenizer.batch_decode(main_text_ids, skip_special_tokens=True)
+                query_text = []
+                for text in main_text:
+                    start_index = text.find('\n') + 1
+                    end_index = text.find('ASSISTANT')
+                    query_text.append(text[start_index:end_index].strip())
+                print(query_text)
+                image_features = self.encode_images(images, query_text)
+            else:
+                image_features = self.encode_images(images)
 
         # TODO: image start / end is not implemented here to support pretraining.
         if getattr(self.config, "tune_mm_mlp_adapter", False) and getattr(self.config, "mm_use_im_start_end", False):
