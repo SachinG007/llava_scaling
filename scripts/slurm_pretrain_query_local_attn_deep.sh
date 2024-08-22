@@ -28,7 +28,7 @@ cd /home/sachingo/llava_scaling
 FINAL_TOKEN_COUNT=$1
 PROMPT_VERSION=plain
 LLM_VERSION="Qwen/Qwen1.5-0.5B-Chat"
-OUTPUT_ROOT="/data/locus/large_training_datasets/FADU_CLIP_pools/llava_scaling"
+OUTPUT_ROOT="/data/locus/large_training_datasets/llava_scaling"
 
 
 deepspeed --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
