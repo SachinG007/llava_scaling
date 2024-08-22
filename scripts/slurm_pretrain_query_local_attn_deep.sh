@@ -26,7 +26,7 @@ cd /home/sachingo/llava_scaling
 
 #run with 1,4 and 36
 FINAL_TOKEN_COUNT=$1
-PROMPT_VERSION=plain
+PROMPT_VERSION=qwen
 LLM_VERSION="Qwen/Qwen1.5-0.5B-Chat"
 OUTPUT_ROOT="/data/locus/large_training_datasets/llava_scaling"
 
@@ -70,12 +70,14 @@ deepspeed --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --mm_vision_token_compression_kernel_size 4 \
     --mm_vision_token_compression_stride 4
 
+root="/data/user_data/sachingo/llava_pretraining_data/LLaVA-Finetune"
+
 deepspeed  --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --deepspeed ./scripts/zero3.json \
     --model_name_or_path $LLM_VERSION \
     --version $PROMPT_VERSION \
-    --data_path ./playground/data/llava_v1_5_mix665k.json \
-    --image_folder ./playground/data \
+    --data_path ${root}/llava_v1_5_mix665k.json \
+    --image_folder ${root} \
     --vision_tower openai/clip-vit-large-patch14-336 \
     --pretrain_mm_mlp_adapter $OUTPUT_ROOT/checkpoints/llava-qwen-pretrain-local-conv-deep-${FINAL_TOKEN_COUNT}tokens/mm_projector.bin \
     --mm_projector_type mlp2x_gelu \
@@ -89,7 +91,7 @@ deepspeed  --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --num_train_epochs 1 \
     --per_device_train_batch_size 8 \
     --per_device_eval_batch_size 4 \
-    --gradient_accumulation_steps 4 \
+    --gradient_accumulation_steps 8 \
     --evaluation_strategy "no" \
     --save_strategy "steps" \
     --save_steps 50000 \
