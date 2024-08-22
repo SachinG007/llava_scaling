@@ -20,16 +20,15 @@
 # New effective batch size: 16 * 4 * 4 = 256
 
 source ~/.bashrc
-module load cuda12.2
-
-module load conda/2023.03
-conda activate llava_next
-cd /scratch/home/gos2pi/llava_scaling
+conda init
+conda activate tokenpacker
+cd /home/sachingo/llava_scaling
 
 #run with 1,4 and 36
 FINAL_TOKEN_COUNT=$1
 PROMPT_VERSION=plain
 LLM_VERSION="Qwen/Qwen1.5-0.5B-Chat"
+OUTPUT_ROOT="/data/locus/large_training_datasets/FADU_CLIP_pools/llava_scaling"
 
 
 deepspeed --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
@@ -46,7 +45,7 @@ deepspeed --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --mm_use_im_start_end False \
     --mm_use_im_patch_token False \
     --bf16 True \
-    --output_dir ./checkpoints/llava-qwen-pretrain-local-conv-deep-${FINAL_TOKEN_COUNT}tokens \
+    --output_dir $OUTPUT_ROOT/checkpoints/llava-qwen-pretrain-local-conv-deep-${FINAL_TOKEN_COUNT}tokens \
     --num_train_epochs 1 \
     --per_device_train_batch_size 16 \
     --per_device_eval_batch_size 4 \
@@ -73,12 +72,12 @@ deepspeed --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
 
 deepspeed  --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --deepspeed ./scripts/zero3.json \
-    --model_name_or_path /scratch/shared/models/huggingface/vicuna-7b-v1.5 \
-    --version v1 \
-    --data_path ./playground/data/llava_v1_5_mix665k_filtered.json \
+    --model_name_or_path $LLM_VERSION \
+    --version $PROMPT_VERSION \
+    --data_path ./playground/data/llava_v1_5_mix665k.json \
     --image_folder ./playground/data \
     --vision_tower openai/clip-vit-large-patch14-336 \
-    --pretrain_mm_mlp_adapter ./checkpoints/llava-v1.5-vicuna-7b-v1.5-pretrain-query-local-conv-deep-${FINAL_TOKEN_COUNT}tokens/mm_projector.bin \
+    --pretrain_mm_mlp_adapter $OUTPUT_ROOT/checkpoints/llava-qwen-pretrain-local-conv-deep-${FINAL_TOKEN_COUNT}tokens/mm_projector.bin \
     --mm_projector_type mlp2x_gelu \
     --mm_vision_select_layer -2 \
     --mm_use_im_start_end False \
@@ -86,7 +85,7 @@ deepspeed  --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/llava-v1.5-7b-query-local-conv-deep-finetune-${FINAL_TOKEN_COUNT}tokens \
+    --output_dir $OUTPUT_ROOT/checkpoints/llava-qwen-finetune-local-conv-deep-${FINAL_TOKEN_COUNT}tokens \
     --num_train_epochs 1 \
     --per_device_train_batch_size 8 \
     --per_device_eval_batch_size 4 \
@@ -106,7 +105,7 @@ deepspeed  --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \
     --report_to tensorboard \
-    --mm_vision_token_compression_type query-local-conv-self-attn-deep \
+    --mm_vision_token_compression_type local-conv-self-attn-deep \
     --mm_vision_output_combined_token_count $FINAL_TOKEN_COUNT \
     --mm_vision_token_compression_kernel_size 4 \
     --mm_vision_token_compression_stride 4

@@ -17,7 +17,6 @@ class CLIPVisionTower(nn.Module):
         self.select_feature = getattr(args, 'mm_vision_select_feature', 'patch')
         self.mm_vision_token_compression_type = getattr(args, 'mm_vision_token_compression_type', None)
         self.mm_vision_output_combined_token_count = getattr(args, 'mm_vision_output_combined_token_count', None)
-        self.nlp = spacy.load("en_core_web_sm")
 
 
         if not delay_load:
