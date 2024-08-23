@@ -3,7 +3,7 @@ __pycache__
 *.pyc
 *.egg-info
 dist
-
+slurm_output/
 # Log
 *.log
 *.log.*
