@@ -11,7 +11,6 @@
 #SBATCH --mail-type=END
 #SBATCH --mail-user=sachingo@andrew.cmu.edu
 #SBATCH --priority=1  # Set priority to a very low value
-#SBATCH --array=0-3%1
 
 # Original training script using Vicuna 13B targets 8 A100 GPUs with 80GB memory. We have... 1. Since we're training the
 # 7B parameter model, we can actually fit twice as many samples in memory, so we've increased the per-gpu batch size to
@@ -24,23 +23,7 @@
 source ~/.bashrc
 conda init
 conda activate llava
-USER_NAME=sachingo
-cd /home/$USER_NAME/llava_scaling
-
-mkdir -p /scratch/$USER_NAME/LLaVA-Pretrain
-rsync -a /data/user_data/sachingo/llava_pretraining_data/LLaVA-Pretrain/ /scratch/$USER_NAME/LLaVA-Pretrain/
-PRETRAIN_ROOT=/scratch/$USER_NAME/LLaVA-Pretrain
-
-mkdir -p /scratch/$USER_NAME/LLaVA-Finetune
-rsync -a /data/user_data/sachingo/llava_pretraining_data/LLaVA-Pretrain/ /scratch/$USER_NAME/LLaVA-Finetune/
-FINETUNE_ROOT=/scratch/$USER_NAME/LLaVA-Finetune
-
-declare -a FINAL_TOKEN_COUNTS=(4 1)
-declare -a KERNELS=(12 24)
-
-# Get the values for the current task
-FINAL_TOKEN_COUNT=${FINAL_TOKEN_COUNTS[$SLURM_ARRAY_TASK_ID]}
-KERNEL=${KERNELS[$SLURM_ARRAY_TASK_ID]}
+cd /home/sachingo/llava_scaling
 
 
 PROMPT_VERSION=qwen_1_5
@@ -54,8 +37,8 @@ deepspeed --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --deepspeed ./scripts/zero2.json \
     --model_name_or_path $LLM_VERSION \
     --version $PROMPT_VERSION \
-    --data_path ${PRETRAIN_ROOT}/blip_laion_cc_sbu_558k.json \
-    --image_folder ${PRETRAIN_ROOT}/images \
+    --data_path ./playground/data/LLaVA-Pretrain/blip_laion_cc_sbu_558k.json \
+    --image_folder ./playground/data/LLaVA-Pretrain/images \
     --vision_tower openai/clip-vit-large-patch14-336 \
     --mm_projector_type mlp2x_gelu \
     --tune_mm_mlp_adapter True \
@@ -64,7 +47,7 @@ deepspeed --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --mm_use_im_start_end False \
     --mm_use_im_patch_token False \
     --bf16 True \
-    --output_dir $OUTPUT_ROOT/checkpoints/llava-${LLM_VERSION_SAVE_NAME}-pretrain-local-conv-deep-${FINAL_TOKEN_COUNT}tokens \
+    --output_dir $OUTPUT_ROOT/checkpoints/llava-${LLM_VERSION_SAVE_NAME}-pretrain-baseline \
     --num_train_epochs 1 \
     --per_device_train_batch_size 16 \
     --per_device_eval_batch_size 4 \
@@ -84,19 +67,17 @@ deepspeed --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \
     --report_to tensorboard \
-    --mm_vision_token_compression_type local-conv-self-attn-deep \
-    --mm_vision_output_combined_token_count $FINAL_TOKEN_COUNT \
-    --mm_vision_token_compression_kernel_size $KERNEL \
-    --mm_vision_token_compression_stride $KERNEL
+
+root="/data/user_data/sachingo/llava_pretraining_data/LLaVA-Finetune"
 
 deepspeed  --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --deepspeed ./scripts/zero3.json \
     --model_name_or_path $LLM_VERSION \
     --version $PROMPT_VERSION \
-    --data_path ${FINETUNE_ROOT}/llava_v1_5_mix665k.json \
-    --image_folder ${FINETUNE_ROOT} \
+    --data_path ${root}/llava_v1_5_mix665k.json \
+    --image_folder ${root} \
     --vision_tower openai/clip-vit-large-patch14-336 \
-    --pretrain_mm_mlp_adapter $OUTPUT_ROOT/checkpoints/llava-${LLM_VERSION_SAVE_NAME}-pretrain-local-conv-deep-${FINAL_TOKEN_COUNT}tokens/mm_projector.bin \
+    --pretrain_mm_mlp_adapter $OUTPUT_ROOT/checkpoints/llava-${LLM_VERSION_SAVE_NAME}-pretrain-baseline/mm_projector.bin \
     --mm_projector_type mlp2x_gelu \
     --mm_vision_select_layer -2 \
     --mm_use_im_start_end False \
@@ -104,7 +85,7 @@ deepspeed  --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir $OUTPUT_ROOT/checkpoints/llava-${LLM_VERSION_SAVE_NAME}-finetune-local-conv-deep-${FINAL_TOKEN_COUNT}tokens \
+    --output_dir $OUTPUT_ROOT/checkpoints/llava-${LLM_VERSION_SAVE_NAME}-finetune-baseline \
     --num_train_epochs 1 \
     --per_device_train_batch_size 8 \
     --per_device_eval_batch_size 4 \
@@ -124,7 +105,3 @@ deepspeed  --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \
     --report_to tensorboard \
-    --mm_vision_token_compression_type local-conv-self-attn-deep \
-    --mm_vision_output_combined_token_count $FINAL_TOKEN_COUNT \
-    --mm_vision_token_compression_kernel_size $KERNEL \
-    --mm_vision_token_compression_stride $KERNEL
