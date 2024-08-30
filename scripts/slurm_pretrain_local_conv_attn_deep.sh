@@ -32,7 +32,7 @@ rsync -a /data/user_data/sachingo/llava_pretraining_data/LLaVA-Pretrain/ /scratc
 PRETRAIN_ROOT=/scratch/$USER_NAME/LLaVA-Pretrain
 
 mkdir -p /scratch/$USER_NAME/LLaVA-Finetune
-rsync -a /data/user_data/sachingo/llava_pretraining_data/LLaVA-Pretrain/ /scratch/$USER_NAME/LLaVA-Finetune/
+rsync -a /data/user_data/sachingo/llava_pretraining_data/LLaVA-Finetune/ /scratch/$USER_NAME/LLaVA-Finetune/
 FINETUNE_ROOT=/scratch/$USER_NAME/LLaVA-Finetune
 
 declare -a FINAL_TOKEN_COUNTS=(4 1)
