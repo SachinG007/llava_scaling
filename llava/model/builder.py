@@ -145,6 +145,12 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
                 llava_cfg = LlavaConfig.from_pretrained(model_path)
                 model = LlavaLlamaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=llava_cfg, **kwargs)
+            elif "qwen" in model_name.lower() or "quyen" in model_name.lower():
+                from llava.model.language_model.llava_qwen import LlavaQwenConfig
+                tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
+                kwargs['tokenizer'] = tokenizer
+                cfg_pretrained = LlavaQwenConfig.from_pretrained(model_path)
+                model = LlavaQwenForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, attn_implementation=attn_implementation, **kwargs)
             else:
                 raise ValueError(f"Model {model_name} not supported")
 
