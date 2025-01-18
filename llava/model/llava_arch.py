@@ -217,7 +217,7 @@ class LlavaMetaForCausalLM(ABC):
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
             return input_ids, position_ids, attention_mask, past_key_values, None, labels
         if type(images) is list or images.ndim == 5:
-            if 'query' in self.get_model().config.mm_vision_token_compression_type:
+            if 'query' in (getattr(self.get_model().config, 'mm_vision_token_compression_type', '') or ''):
                 raise NotImplementedError("The 'query-attn' compression type is not supported.")
             if type(images) is list:
                 images = [x.unsqueeze(0) if x.ndim == 3 else x for x in images]
@@ -340,7 +340,7 @@ class LlavaMetaForCausalLM(ABC):
                 raise ValueError(f"Unexpected mm_patch_merge_type: {self.config.mm_patch_merge_type}")
         else:
             # ['query-attn', 'query-attn-deep', 'query-attn-deep-lessparams', 'half-query-attn-deep', 'half-query-attn-deep-lessparams', 'entity-attn-deep']
-            if 'query' in getattr(self.get_model().config, 'mm_vision_token_compression_type', None):
+            if 'query' in (getattr(self.get_model().config, 'mm_vision_token_compression_type', '') or ''):
                 # split_idx = (input_ids==-200).nonzero()[:,1]
                 #to handle some cases where there are multiple -200 in a row (we take the last one)
                 #this looks like a complex snippet of code but has been tested well 

@@ -1,17 +1,18 @@
 #!/bin/bash
-#SBATCH --job-name=llava
+#SBATCH --job-name=olmo
 #SBATCH --output=slurm_output/train_%j.out  # Standard output
 #SBATCH --error=slurm_output/train_%j.err   # Standard error
-#SBATCH --partition=general
+#SBATCH --partition=preempt
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:A6000:4
+#SBATCH --exclude=babel-7-17,babel-4-33,babel-4-37
 #SBATCH --mem=200G
 #SBATCH --cpus-per-task=16
 #SBATCH --time=48:00:00
 #SBATCH --mail-type=END
 #SBATCH --mail-user=sachingo@andrew.cmu.edu
 #SBATCH --priority=1  # Set priority to a very low value
-#SBATCH --array=0-1%2
+#SBATCH --array=0-6
 
 # Original training script using Vicuna 13B targets 8 A100 GPUs with 80GB memory. We have... 1. Since we're training the
 # 7B parameter model, we can actually fit twice as many samples in memory, so we've increased the per-gpu batch size to
@@ -23,32 +24,29 @@
 
 source ~/.bashrc
 conda init
-conda activate llava
+conda activate /data/user_data/sachingo/miniconda3/envs/llava
 USER_NAME=sachingo
-cd /home/$USER_NAME/llava_scaling
+cd /home/sachingo/llava_scaling
 
 mkdir -p /scratch/$USER_NAME/LLaVA-Pretrain
-rsync -a /data/user_data/sachingo/llava_pretraining_data/LLaVA-Pretrain/ /scratch/$USER_NAME/LLaVA-Pretrain/
-PRETRAIN_ROOT=/scratch/$USER_NAME/LLaVA-Pretrain
+# rsync -a /data/user_data/sachingo/llava_pretraining_data/LLaVA-Pretrain/ /scratch/$USER_NAME/LLaVA-Pretrain/
+PRETRAIN_ROOT=/data/user_data/sachingo/llava_pretraining_data/LLaVA-Pretrain/ #/scratch/$USER_NAME/LLaVA-Pretrain
 
 mkdir -p /scratch/$USER_NAME/LLaVA-Finetune
-rsync -a /data/user_data/sachingo/llava_pretraining_data/LLaVA-Finetune/ /scratch/$USER_NAME/LLaVA-Finetune/
-FINETUNE_ROOT=/scratch/$USER_NAME/LLaVA-Finetune
-
-declare -a FINAL_TOKEN_COUNTS=(4 1)
-declare -a KERNELS=(12 24)
-
-# Get the values for the current task
-FINAL_TOKEN_COUNT=${FINAL_TOKEN_COUNTS[$SLURM_ARRAY_TASK_ID]}
-KERNEL=${KERNELS[$SLURM_ARRAY_TASK_ID]}
+# rsync -a /data/user_data/sachingo/llava_pretraining_data/LLaVA-Finetune/ /scratch/$USER_NAME/LLaVA-Finetune/
+FINETUNE_ROOT=/data/user_data/sachingo/llava_pretraining_data/LLaVA-Finetune/ #/scratch/$USER_NAME/LLaVA-Finetune
 
 
+LLM_VERSION_ARRAY=("olmo_1b_token41B" "olmo_1b_token494B" "olmo_1b_token1500B" "olmo_1b_token1874B" "olmo_1b_token2353B" "olmo_1b_token2767B" "olmo_1b_token3094B")
 PROMPT_VERSION=qwen_1_5
-LLM_VERSION="Qwen/Qwen1.5-0.5B-Chat"
-LLM_VERSION_SAVE_NAME="qwen_0.5b"
+LLM_VERSION_SAVE_NAME=${LLM_VERSION_ARRAY[$SLURM_ARRAY_TASK_ID]}
+LLM_VERSION="/data/user_data/sachingo/${LLM_VERSION_SAVE_NAME}/"
 OUTPUT_ROOT="/data/locus/large_training_datasets/llava_scaling"
 
-export CUDA_HOME=$HOME/miniconda3/envs/llava
+# export CUDA_HOME=$HOME/miniconda3/envs/llava
+export CUDA_HOME=/usr/local/cuda-12.1
+export PATH=${CUDA_HOME}/bin:${PATH}
+export LD_LIBRARY_PATH=${CUDA_HOME}/lib64:$LD_LIBRARY_PATH
 
 deepspeed --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --deepspeed ./scripts/zero2.json \
@@ -64,7 +62,7 @@ deepspeed --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --mm_use_im_start_end False \
     --mm_use_im_patch_token False \
     --bf16 True \
-    --output_dir $OUTPUT_ROOT/checkpoints/llava-${LLM_VERSION_SAVE_NAME}-pretrain-local-conv-deep-${FINAL_TOKEN_COUNT}tokens \
+    --output_dir $OUTPUT_ROOT/checkpoints/llava-${LLM_VERSION_SAVE_NAME}-lr1e-4-pretrain \
     --num_train_epochs 1 \
     --per_device_train_batch_size 16 \
     --per_device_eval_batch_size 4 \
@@ -73,7 +71,7 @@ deepspeed --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --save_strategy "steps" \
     --save_steps 24000 \
     --save_total_limit 1 \
-    --learning_rate 1e-3 \
+    --learning_rate 1e-4 \
     --weight_decay 0. \
     --warmup_ratio 0.03 \
     --lr_scheduler_type "cosine" \
@@ -84,10 +82,7 @@ deepspeed --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \
     --report_to tensorboard \
-    --mm_vision_token_compression_type local-conv-self-attn-deep \
-    --mm_vision_output_combined_token_count $FINAL_TOKEN_COUNT \
-    --mm_vision_token_compression_kernel_size $KERNEL \
-    --mm_vision_token_compression_stride $KERNEL
+
 
 deepspeed  --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --deepspeed ./scripts/zero3.json \
@@ -96,7 +91,7 @@ deepspeed  --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --data_path ${FINETUNE_ROOT}/llava_v1_5_mix665k.json \
     --image_folder ${FINETUNE_ROOT} \
     --vision_tower openai/clip-vit-large-patch14-336 \
-    --pretrain_mm_mlp_adapter $OUTPUT_ROOT/checkpoints/llava-${LLM_VERSION_SAVE_NAME}-pretrain-local-conv-deep-${FINAL_TOKEN_COUNT}tokens/mm_projector.bin \
+    --pretrain_mm_mlp_adapter $OUTPUT_ROOT/checkpoints/llava-${LLM_VERSION_SAVE_NAME}-lr1e-4-pretrain/mm_projector.bin \
     --mm_projector_type mlp2x_gelu \
     --mm_vision_select_layer -2 \
     --mm_use_im_start_end False \
@@ -104,11 +99,11 @@ deepspeed  --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir $OUTPUT_ROOT/checkpoints/llava-${LLM_VERSION_SAVE_NAME}-finetune-local-conv-deep-${FINAL_TOKEN_COUNT}tokens \
+    --output_dir $OUTPUT_ROOT/checkpoints/llava-${LLM_VERSION_SAVE_NAME}-lr1e-4-finetune \
     --num_train_epochs 1 \
-    --per_device_train_batch_size 8 \
+    --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 4 \
-    --gradient_accumulation_steps 8 \
+    --gradient_accumulation_steps 16 \
     --evaluation_strategy "no" \
     --save_strategy "steps" \
     --save_steps 50000 \
@@ -124,7 +119,3 @@ deepspeed  --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \
     --report_to tensorboard \
-    --mm_vision_token_compression_type local-conv-self-attn-deep \
-    --mm_vision_output_combined_token_count $FINAL_TOKEN_COUNT \
-    --mm_vision_token_compression_kernel_size $KERNEL \
-    --mm_vision_token_compression_stride $KERNEL

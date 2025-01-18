@@ -46,6 +46,8 @@ from llava import conversation as conversation_lib
 from llava.model import *
 from llava.mm_utils import process_highres_image, process_anyres_image, process_highres_image_crop_split, tokenizer_image_token
 from llava.utils import rank0_print, process_video_with_pyav, process_video_with_decord
+from hf_olmo import OLMoForCausalLM, OLMoTokenizerFast
+
 
 torch.multiprocessing.set_sharing_strategy("file_system")
 
@@ -630,10 +632,74 @@ def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_im
         targets.append(target)
     input_ids = torch.tensor(input_ids, dtype=torch.long)
     targets = torch.tensor(targets, dtype=torch.long)
-
     return dict(
         input_ids=input_ids,  # tensor(bs x seq_len)
         labels=targets,  # tensor(bs x seq_len)
+    )
+
+def preprocess_olmo(sources, tokenizer: transformers.PreTrainedTokenizer, has_image: bool = False, max_len=2048, system_message: str = "You are a helpful assistant.") -> Dict:
+    roles = {"human": "user", "gpt": "assistant"}
+
+    # Deepcopy the tokenizer to avoid modifying the original
+    tokenizer = copy.deepcopy(tokenizer)
+
+    # Add image tokens to tokenizer if required
+    if has_image:
+        tokenizer.add_tokens(["<image>"], special_tokens=True)
+
+    image_token_index = tokenizer.convert_tokens_to_ids("<image>")
+    additional_special_tokens_ids = tokenizer.additional_special_tokens_ids or []
+    nl_tokens = tokenizer("\n").input_ids
+
+    # Set custom chat template for Olmo
+    chat_template = "{% for message in messages %}{{ message['role'] + '\\n' + message['content'] }}{% endfor %}{% if add_generation_prompt %}{{ 'assistant\\n' }}{% endif %}"
+    tokenizer.chat_template = chat_template
+
+    input_ids, targets = [], []
+
+    for source in sources:
+        if roles[source[0]["from"]] != roles["human"]:
+            source = source[1:]
+
+        input_id, target = [], []
+
+        # Add system message
+        system_message_tokens = tokenizer.apply_chat_template([{"role": "system", "content": system_message}])
+        input_id += system_message_tokens
+        target += [IGNORE_INDEX] * len(system_message_tokens)
+
+        for conv in source:
+            try:
+                role = conv["role"]
+                content = conv["content"]
+            except KeyError:
+                role = conv["from"]
+                content = conv["value"]
+
+            role = roles.get(role, role)
+            conv_tokens = tokenizer.apply_chat_template([{"role": role, "content": content}])
+            input_id += conv_tokens
+            if role in ["user", "system"]:
+                target += [IGNORE_INDEX] * len(conv_tokens)
+            else:
+                target += conv_tokens
+
+        assert len(input_id) == len(target), f"{len(input_id)} != {len(target)}"
+
+        for idx, encode_id in enumerate(input_id):
+            if encode_id in additional_special_tokens_ids:
+                target[idx] = encode_id
+            if encode_id == image_token_index:
+                input_id[idx] = IMAGE_TOKEN_INDEX
+
+        input_ids.append(input_id)
+        targets.append(target)
+
+    input_ids = torch.tensor(input_ids, dtype=torch.long)
+    targets = torch.tensor(targets, dtype=torch.long)
+    return dict(
+        input_ids=input_ids,  # tensor(bs x seq_len)
+        labels=targets,      # tensor(bs x seq_len)
     )
 
 
@@ -889,6 +955,7 @@ def preprocess_plain(
 ) -> Dict:
     # add end signal and concatenate together
     conversations = []
+    print("***********************Source 0 ", sources[0])
     for source in sources:
         assert len(source) == 2
         assert DEFAULT_IMAGE_TOKEN in source[0]["value"]
@@ -922,7 +989,9 @@ def preprocess(sources: Sequence[str], tokenizer: transformers.PreTrainedTokeniz
     if conversation_lib.default_conversation.version == "mpt":
         return preprocess_mpt(sources, tokenizer, has_image=has_image)
     if conversation_lib.default_conversation.version == "qwen":
-        return preprocess_qwen(sources, tokenizer, has_image=has_image)
+        return preprocess_olmo(sources, tokenizer, has_image=has_image)
+    if conversation_lib.default_conversation.version == "olmo":
+        return preprocess_olmo(sources, tokenizer, has_image=has_image)
     if conversation_lib.default_conversation.version == "gemma":
         return preprocess_gemma(sources, tokenizer, has_image=has_image)
     if conversation_lib.default_conversation.version == "llama_v3":
@@ -1140,7 +1209,7 @@ class LazySupervisedDataset(Dataset):
         if isinstance(i, int):
             sources = [sources]
         assert len(sources) == 1, "Don't know why it is wrapped to a list"  # FIXME
-
+        
         if "image" in sources[0]:
             image_file = self.list_data_dict[i]["image"]
             if type(image_file) is list:
@@ -1197,7 +1266,12 @@ class LazySupervisedDataset(Dataset):
             sources = copy.deepcopy([e["conversations"] for e in sources])
 
         has_image = ("image" in self.list_data_dict[i]) or ("video" in self.list_data_dict[i])
+        # try:
         data_dict = preprocess(sources, self.tokenizer, has_image=has_image)
+        # except:
+        #     print(f"i: {i} : sources : {sources} ")
+        #     print(self.list_data_dict[i])
+        #     import pdb; pdb.set_trace()
 
         if "prompt" in data_dict:
             prompt = data_dict["prompt"]
@@ -1301,7 +1375,7 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
             model_args.mm_resampler_type is not None,
         ]
     ):
-        cfg_pretrained = AutoConfig.from_pretrained(model_args.model_name_or_path)
+        cfg_pretrained = AutoConfig.from_pretrained(model_args.model_name_or_path, trust_remote_code=True)
 
     if model_args.use_pos_skipping is not None and model_args.pos_skipping_range is not None:
         overwrite_config["use_pos_skipping"] = model_args.use_pos_skipping
@@ -1428,6 +1502,15 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
                 low_cpu_mem_usage=False,
                 **customized_kwargs,
             )
+        elif "olmo" in model_args.model_name_or_path.lower():
+            model = LlavaOlmoForCausalLM.from_pretrained(
+                model_args.model_name_or_path,
+                cache_dir=training_args.cache_dir,
+                attn_implementation=training_args.attn_implementation,
+                torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
+                low_cpu_mem_usage=False,
+                **customized_kwargs,
+            )
         else:
             raise ValueError(f"Unknown model class {model_args}")
     else:
@@ -1529,10 +1612,13 @@ def train(attn_implementation=None):
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir, model_max_length=training_args.model_max_length, padding_side="left")
     elif "qwen" in model_args.model_name_or_path.lower():
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir, model_max_length=training_args.model_max_length, padding_side="right")
+    elif "olmo" in model_args.model_name_or_path.lower():
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir, model_max_length=training_args.model_max_length, padding_side="right")
     elif (
         "wizardlm-2" in model_args.model_name_or_path.lower()
         or "vicuna" in model_args.model_name_or_path.lower()
         or "llama" in model_args.model_name_or_path.lower()
+        or "olmo" in model_args.model_name_or_path.lower()
         or "yi" in model_args.model_name_or_path.lower()
         or "nous-hermes" in model_args.model_name_or_path.lower()
         and "wizard-2" in model_args.model_name_or_path.lower()
@@ -1684,28 +1770,39 @@ def train(attn_implementation=None):
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
     trainer = LLaVATrainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
 
-    if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
+
+    no_training = False
+
+
+    
+    if list(pathlib.Path(training_args.output_dir).glob("model.safetensors")):
+        no_training = True
+        rank0_print(f"Trained model found in {training_args.output_dir}. Exiting without training.")
+    elif list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         trainer.train(resume_from_checkpoint=True)
     else:
         trainer.train()
-    trainer.save_state()
+    
+    if not no_training:
+        
+        trainer.save_state()
 
-    model.config.use_cache = True
+        model.config.use_cache = True
 
-    if training_args.lora_enable:
-        state_dict = get_peft_state_maybe_zero_3(model.named_parameters(), training_args.lora_bias)
-        non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.named_parameters())
-        if training_args.local_rank == 0 or training_args.local_rank == -1:
-            if hasattr(model, "config"):
-                model.config.save_pretrained(training_args.output_dir)
-            if hasattr(model, "generation_config"):
-                model.generation_config.save_pretrained(training_args.output_dir)
-            model.save_pretrained(training_args.output_dir, state_dict=state_dict)
-            torch.save(non_lora_state_dict, os.path.join(training_args.output_dir, "non_lora_trainables.bin"))
-    else:
-        safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
+        if training_args.lora_enable:
+            state_dict = get_peft_state_maybe_zero_3(model.named_parameters(), training_args.lora_bias)
+            non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.named_parameters())
+            if training_args.local_rank == 0 or training_args.local_rank == -1:
+                if hasattr(model, "config"):
+                    model.config.save_pretrained(training_args.output_dir)
+                if hasattr(model, "generation_config"):
+                    model.generation_config.save_pretrained(training_args.output_dir)
+                model.save_pretrained(training_args.output_dir, state_dict=state_dict)
+                torch.save(non_lora_state_dict, os.path.join(training_args.output_dir, "non_lora_trainables.bin"))
+        else:
+            safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
 
-    rank0_print(f"Model saved to {training_args.output_dir}")
+        rank0_print(f"Model saved to {training_args.output_dir}")
 
 
 if __name__ == "__main__":

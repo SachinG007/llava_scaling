@@ -28,7 +28,7 @@ huggingface-cli login --token $HUGGINGFACE_TOKEN
 ROOT="/data/locus/large_training_datasets/llava_scaling/checkpoints/"
 # MODEL_NAMES=("llava-qwen_0.5b-finetune-baseline" "llava-qwen_0.5b-finetune-local-conv-deep-1tokens" "llava-qwen_0.5b-finetune-local-conv-deep-4tokens" "llava-qwen_0.5b-finetune-local-conv-deep-16tokens" "llava-qwen_0.5b-finetune-local-conv-deep-36tokens" "llava-qwen_1.8b-finetune-local-conv-deep-1tokens" "llava-qwen_1.8b-finetune-local-conv-deep-4tokens" "llava-qwen_1.8b-finetune-local-conv-deep-16tokens" "llava-qwen_1.8b-finetune-local-conv-deep-36tokens" "llava-qwen_4b-finetune-local-conv-deep-16tokens" "llava-qwen_4b-finetune-local-conv-deep-36tokens")
 # MODEL_NAMES=("llava-qwen_4b-finetune-local-conv-deep-1tokens" "llava-qwen_4b-finetune-local-conv-deep-4tokens" "llava-qwen_7b-finetune-local-conv-deep-1tokens" "llava-qwen_7b-finetune-local-conv-deep-4tokens" "llava-qwen_7b-finetune-local-conv-deep-16tokens" "llava-qwen_7b-finetune-local-conv-deep-36tokens")
-MODEL_NAMES=("llava-qwen_7b-finetune-local-conv-deep-64tokens" "llava-qwen_7b-finetune-local-conv-deep-144tokens") 
+MODEL_NAMES=("llava-qwen_1.8b-finetune-baseline" "llava-qwen_4b-finetune-baseline" "llava-qwen_7b-finetune-baseline") 
 CURR_MODEL=${MODEL_NAMES[$SLURM_ARRAY_TASK_ID]}
 
 PRETRAINED_MODEL=${ROOT}/${CURR_MODEL}

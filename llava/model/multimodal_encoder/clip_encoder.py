@@ -15,7 +15,7 @@ class CLIPVisionTower(nn.Module):
         self.vision_tower_name = vision_tower
         self.select_layer = args.mm_vision_select_layer
         self.select_feature = getattr(args, 'mm_vision_select_feature', 'patch')
-        self.mm_vision_token_compression_type = getattr(args, 'mm_vision_token_compression_type', None)
+        self.mm_vision_token_compression_type = getattr(args, 'mm_vision_token_compression_type', None) or ''
         self.mm_vision_output_combined_token_count = getattr(args, 'mm_vision_output_combined_token_count', None)
 
 
@@ -34,10 +34,11 @@ class CLIPVisionTower(nn.Module):
         self.image_processor = CLIPImageProcessor.from_pretrained(self.vision_tower_name)
         self.vision_tower = CLIPVisionModel.from_pretrained(self.vision_tower_name, device_map=device_map)
         self.vision_tower.requires_grad_(False)
-        if 'query' in self.mm_vision_token_compression_type:
-            self.text_tower = CLIPTextModel.from_pretrained(self.vision_tower_name, device_map=device_map)
-            self.text_tower.requires_grad_(False)
-            self.clip_tokenizer = AutoTokenizer.from_pretrained(self.vision_tower_name)
+        if self.mm_vision_token_compression_type is not None:
+            if 'query' in self.mm_vision_token_compression_type:
+                self.text_tower = CLIPTextModel.from_pretrained(self.vision_tower_name, device_map=device_map)
+                self.text_tower.requires_grad_(False)
+                self.clip_tokenizer = AutoTokenizer.from_pretrained(self.vision_tower_name)
 
         self.is_loaded = True
     
@@ -58,8 +59,9 @@ class CLIPVisionTower(nn.Module):
         else:
             raise ValueError(f'Unexpected select feature: {self.select_feature}')
         
-        if self.mm_vision_token_compression_type in ['token-packer'] or 'deep' in self.mm_vision_token_compression_type:
-            return image_features, image_features_multi
+        if self.mm_vision_token_compression_type is not None:
+            if self.mm_vision_token_compression_type in ['token-packer'] or 'deep' in self.mm_vision_token_compression_type:
+                return image_features, image_features_multi
         return image_features
 
     def extract_keywords(self, text, token_count):
