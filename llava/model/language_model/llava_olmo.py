@@ -61,7 +61,8 @@ class LlavaOlmoForCausalLM(OlmoForCausalLM, LlavaMetaForCausalLM):
     @classmethod
     def from_pretrained(self, *model_args, **kwargs):
         model_path = model_args[0]
-        model = super(LlavaOlmoForCausalLM, self).from_pretrained(*model_args, **kwargs)
+        import pdb; pdb.set_trace()
+        model = super(LlavaOlmoForCausalLM, self).from_pretrained(*model_args) #, **kwargs)
         self.tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
         return model
     
