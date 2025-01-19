@@ -34,14 +34,14 @@ LLM_VERSION_ARRAY=("Amber-ckpt_040"  "Amber-ckpt_102"  "Amber-ckpt_244"  "Amber-
 
 PROMPT_VERSION=plain #for llama
 LLM_VERSION_SAVE_NAME=${LLM_VERSION_ARRAY[$SLURM_ARRAY_TASK_ID]}
-LLM_VERSION="/data/locus/project_data/project_data2/jspringe/models/LLM360/${LLM_VERSION_SAVE_NAME}/"
-OUTPUT_ROOT="/data/locus/project_data/project_data2/sachingo/llava_scaling/"
+LLM_VERSION="/home/sachingo/olmo_intermediate/LLM360/${LLM_VERSION_SAVE_NAME}/"
+OUTPUT_ROOT="/home/sachingo/llava_scaling/output_dir/llava_scaling/"
 
 # export CUDA_HOME=$HOME/miniconda3/envs/llava
-export CUDA_HOME=/usr/local/cuda-12.1
-export PATH=${CUDA_HOME}/bin:${PATH}
-export LD_LIBRARY_PATH=${CUDA_HOME}/lib64:$LD_LIBRARY_PATH
-export NCCL_P2P_DISABLE=1
+# export CUDA_HOME=/usr/local/cuda-12.1
+# export PATH=${CUDA_HOME}/bin:${PATH}
+# export LD_LIBRARY_PATH=${CUDA_HOME}/lib64:$LD_LIBRARY_PATH
+# export NCCL_P2P_DISABLE=1
 
 deepspeed --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --deepspeed ./scripts/zero2.json \
