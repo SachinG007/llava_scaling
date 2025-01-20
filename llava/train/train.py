@@ -1779,8 +1779,8 @@ def train(attn_implementation=None):
     if list(pathlib.Path(training_args.output_dir).glob("model.safetensors")):
         no_training = True
         rank0_print(f"Trained model found in {training_args.output_dir}. Exiting without training.")
-    # elif list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
-    #     trainer.train(resume_from_checkpoint=True)
+    elif list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
+         trainer.train(resume_from_checkpoint=True)
     else:
         trainer.train()
     

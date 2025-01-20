@@ -43,7 +43,7 @@ OUTPUT_ROOT="/home/sachingo/llava_scaling/output_dir/llava_scaling/"
 # export CUDA_HOME=/usr/local/cuda-12.1
 # export PATH=${CUDA_HOME}/bin:${PATH}
 # export LD_LIBRARY_PATH=${CUDA_HOME}/lib64:$LD_LIBRARY_PATH
-# export NCCL_P2P_DISABLE=1
+export NCCL_P2P_DISABLE=1
 
 
 PROMPT_VERSION="qwen_1_5"
