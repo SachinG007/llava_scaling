@@ -20,8 +20,10 @@
 # New effective batch size: 16 * 4 * 4 = 256
 
 source ~/.bashrc
-conda init
-conda activate llava
+# conda init
+# conda activate llava
+source /home/sachingo/miniconda3/bin/activate llava2
+
 
 cd /home/sachingo/llava_scaling
 
@@ -43,40 +45,8 @@ OUTPUT_ROOT="/home/sachingo/llava_scaling/output_dir/llava_scaling/"
 # export LD_LIBRARY_PATH=${CUDA_HOME}/lib64:$LD_LIBRARY_PATH
 # export NCCL_P2P_DISABLE=1
 
-deepspeed --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
-    --deepspeed ./scripts/zero2.json \
-    --model_name_or_path $LLM_VERSION \
-    --version $PROMPT_VERSION \
-    --data_path ${PRETRAIN_ROOT}/blip_laion_cc_sbu_558k.json \
-    --image_folder ${PRETRAIN_ROOT}/images \
-    --vision_tower openai/clip-vit-large-patch14-336 \
-    --mm_projector_type mlp2x_gelu \
-    --tune_mm_mlp_adapter True \
-    --mm_tunable_parts="mm_mlp_adapter" \
-    --mm_vision_select_layer -2 \
-    --mm_use_im_start_end False \
-    --mm_use_im_patch_token False \
-    --bf16 True \
-    --output_dir $OUTPUT_ROOT/checkpoints/llava-${LLM_VERSION_SAVE_NAME}-pretrain \
-    --num_train_epochs 1 \
-    --per_device_train_batch_size 64 \
-    --per_device_eval_batch_size 4 \
-    --gradient_accumulation_steps 1 \
-    --evaluation_strategy "no" \
-    --save_strategy "steps" \
-    --save_steps 24000 \
-    --save_total_limit 1 \
-    --learning_rate 1e-3 \
-    --weight_decay 0. \
-    --warmup_ratio 0.03 \
-    --lr_scheduler_type "cosine" \
-    --logging_steps 1 \
-    --tf32 True \
-    --model_max_length 2048 \
-    --gradient_checkpointing True \
-    --dataloader_num_workers 4 \
-    --lazy_preprocess True \
-    --report_to tensorboard
+
+PROMPT_VERSION="qwen_1_5"
 
 deepspeed  --master_port=$(shuf -i 44000-54000 -n 1) llava/train/train_mem.py \
     --deepspeed ./scripts/zero3.json \
