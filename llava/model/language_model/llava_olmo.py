@@ -26,34 +26,34 @@ from transformers.generation.utils import GenerateOutput
 
 # from ...constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from llava.model.llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
-from transformers import OlmoConfig, OlmoModel, OlmoForCausalLM
+from transformers import Olmo2Config, Olmo2Model, Olmo2ForCausalLM
 
 # from .qwen.modeling_qwen import QWenLMHeadModel, QWenModel
 # from .qwen.configuration_qwen import QWenConfig
 
 
-class LlavaOlmoConfig(OlmoConfig):
-    model_type = "llava_olmo"
+class LlavaOlmo2Config(Olmo2Config):
+    model_type = "llava_olmo2"
 
 
-class LlavaOlmoModel(LlavaMetaModel, OlmoModel):
-    config_class = LlavaOlmoConfig
+class LlavaOlmo2Model(LlavaMetaModel, Olmo2Model):
+    config_class = LlavaOlmo2Config
 
-    def __init__(self, config: OlmoConfig):
-        super(LlavaOlmoModel, self).__init__(config)
+    def __init__(self, config: Olmo2Config):
+        super(LlavaOlmo2Model, self).__init__(config)
 
 
-class LlavaOlmoForCausalLM(OlmoForCausalLM, LlavaMetaForCausalLM):
-    config_class = LlavaOlmoConfig
+class LlavaOlmo2ForCausalLM(Olmo2ForCausalLM, LlavaMetaForCausalLM):
+    config_class = LlavaOlmo2Config
 
     def __init__(self, config):
-        # super(OlmoForCausalLM, self).__init__(config)
+        # super(Olmo2ForCausalLM, self).__init__(config)
         # config.num_key_value_heads = 16
-        OlmoForCausalLM.__init__(self, config)
-        config.model_type = "llava_olmo"
+        Olmo2ForCausalLM.__init__(self, config)
+        config.model_type = "llava_olmo2"
         config.rope_scaling = None
 
-        self.model = LlavaOlmoModel(config)
+        self.model = LlavaOlmo2Model(config)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         # Initialize weights and apply final processing
         self.post_init()
@@ -61,8 +61,8 @@ class LlavaOlmoForCausalLM(OlmoForCausalLM, LlavaMetaForCausalLM):
     @classmethod
     def from_pretrained(self, *model_args, **kwargs):
         model_path = model_args[0]
-        model = super(LlavaOlmoForCausalLM, self).from_pretrained(*model_args, **kwargs)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
+        model = super(LlavaOlmo2ForCausalLM, self).from_pretrained(model_args[0], revision=model_args[1],**kwargs)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path, revision=model_args[1], use_fast=True)
         return model
     
     def get_model(self):
@@ -152,5 +152,5 @@ class LlavaOlmoForCausalLM(OlmoForCausalLM, LlavaMetaForCausalLM):
         return inputs
 
 
-AutoConfig.register("llava_olmo", LlavaOlmoConfig)
-AutoModelForCausalLM.register(LlavaOlmoConfig, LlavaOlmoForCausalLM)
+AutoConfig.register("llava_olmo2", LlavaOlmo2Config)
+AutoModelForCausalLM.register(LlavaOlmo2Config, LlavaOlmo2ForCausalLM)
